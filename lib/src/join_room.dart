@@ -1,28 +1,44 @@
 import 'dart:core';
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/webrtc.dart';
+import 'package:share/share.dart';
 
-class LoopBackSample extends StatefulWidget {
-  static String tag = 'loopback_sample';
+class JoinRoom extends StatefulWidget {
+   final String id;
 
+  const JoinRoom({Key key, this.id}) : super(key: key);
   @override
   _MyAppState createState() => new _MyAppState();
 }
 
-class _MyAppState extends State<LoopBackSample> {
+class _MyAppState extends State<JoinRoom> {
   MediaStream _localStream;
   RTCPeerConnection _peerConnection;
+
   final _localRenderer = new RTCVideoRenderer();
   final _remoteRenderer = new RTCVideoRenderer();
   bool _inCalling = false;
+  bool ready = false;
   Timer _timer;
-
+   var room;
+   var roomSnapshot;
   @override
   initState() {
     super.initState();
+    ininini();
     initRenderers();
+  }
+
+  Future<void> ininini() async {
+    room = await Firestore.instance.collection('rooms').document(widget.id);
+    roomSnapshot =await room.get();
+    setState(() {
+      ready = true;
+    });
   }
 
   @override
@@ -41,21 +57,7 @@ class _MyAppState extends State<LoopBackSample> {
   }
 
   void handleStatsReport(Timer timer) async {
-    if (_peerConnection != null) {
-      List<StatsReport> reports = await _peerConnection.getStats();
-      reports.forEach((report) {
-        print("report => { ");
-        print("    id: " + report.id + ",");
-        print("    type: " + report.type + ",");
-        print("    timestamp: ${report.timestamp},");
-        print("    values => {");
-        report.values.forEach((key, value) {
-          print("        " + key + " : " + value.toString() + ", ");
-        });
-        print("    }");
-        print("}");
-      });
-    }
+
   }
 
   _onSignalingState(RTCSignalingState state) {
@@ -73,6 +75,10 @@ class _MyAppState extends State<LoopBackSample> {
   _onAddStream(MediaStream stream) {
     print('addStream: ' + stream.id);
     _remoteRenderer.srcObject = stream;
+    setState(() {
+      _inCalling = true;
+    });
+
   }
 
   _onRemoveStream(MediaStream stream) {
@@ -80,8 +86,14 @@ class _MyAppState extends State<LoopBackSample> {
   }
 
   _onCandidate(RTCIceCandidate candidate) {
+    var callerCandidatesCollection = room.collection('calleeCandidates');
+
+    callerCandidatesCollection.add(candidate.toMap());
+
     print('onCandidate: ' + candidate.candidate);
     _peerConnection.addCandidate(candidate);
+
+
   }
 
   _onRenegotiationNeeded() {
@@ -95,8 +107,8 @@ class _MyAppState extends State<LoopBackSample> {
       "video": {
         "mandatory": {
           "minWidth":
-              '1280', // Provide your own width, height and frame rate here
-          "minHeight": '720',
+              '600', // Provide your own width, height and frame rate here
+          "minHeight": '600',
           "minFrameRate": '30',
         },
         "facingMode": "user",
@@ -106,7 +118,11 @@ class _MyAppState extends State<LoopBackSample> {
 
     Map<String, dynamic> configuration = {
       "iceServers": [
-        {"url": "stun:stun.l.google.com:19302"},
+        {
+          "url": 'turn:18.224.253.192:3478',
+          "credential": 'FmxvrY6nADxaAskhmrNrAL2N4CRtZ8',
+          "username": 'turnBKhETPNa8M7tsxD'
+        }
       ]
     };
 
@@ -121,7 +137,7 @@ class _MyAppState extends State<LoopBackSample> {
     final Map<String, dynamic> loopbackConstraints = {
       "mandatory": {},
       "optional": [
-        {"DtlsSrtpKeyAgreement": false},
+        {"DtlsSrtpKeyAgreement": true},
       ],
     };
 
@@ -130,7 +146,6 @@ class _MyAppState extends State<LoopBackSample> {
     try {
       _localStream = await navigator.getUserMedia(mediaConstraints);
       _localRenderer.srcObject = _localStream;
-      _localRenderer.mirror = true;
       _peerConnection =
           await createPeerConnection(configuration, loopbackConstraints);
 
@@ -141,25 +156,51 @@ class _MyAppState extends State<LoopBackSample> {
       _peerConnection.onRemoveStream = _onRemoveStream;
       _peerConnection.onIceCandidate = _onCandidate;
       _peerConnection.onRenegotiationNeeded = _onRenegotiationNeeded;
+       _peerConnection.addStream(_localStream);
 
-      _peerConnection.addStream(_localStream);
+      var offer = roomSnapshot.data['offer'];
+       var sdp = offer['sdp'];
+      RTCSessionDescription remoteDescription = RTCSessionDescription(sdp,'offer');
+
+      _peerConnection.setRemoteDescription(remoteDescription);
+
       RTCSessionDescription description =
-          await _peerConnection.createOffer(offerSdpConstraints);
-      print(description.sdp);
+      await _peerConnection.createAnswer(offerSdpConstraints);
+
       _peerConnection.setLocalDescription(description);
-      //change for loopback.
-      description.type = 'answer';
-      _peerConnection.setRemoteDescription(description);
+
+
+      var roomWithAnswer = {
+        'answer': {
+          "type": description.type,
+          "sdp": description.sdp,
+        },
+      };
+      print(roomWithAnswer);
+      await room.updateData(roomWithAnswer);
+
+        //change for loopback.
+
+
+      var callerCandidatesCollection = room.collection('callerCandidates');
+
+      callerCandidatesCollection.snapshots().listen((event) {
+        if(event.documents.length>0)
+          {
+            var temp = event.documents.last.data;
+            RTCIceCandidate remoteCandidate =
+            RTCIceCandidate(temp['candidate'],temp['sdpMid'],temp['sdpMLineIndex']);
+            print('Add new Reomte Candidate');
+            _peerConnection.addCandidate(remoteCandidate);
+          }
+      });
+
+
+
     } catch (e) {
       print(e.toString());
     }
-    if (!mounted) return;
 
-    _timer = new Timer.periodic(Duration(seconds: 1), handleStatsReport);
-
-    setState(() {
-      _inCalling = true;
-    });
   }
 
   _hangUp() async {
@@ -190,7 +231,7 @@ class _MyAppState extends State<LoopBackSample> {
     ];
     return new Scaffold(
       appBar: new AppBar(
-        title: new Text('LoopBack example'),
+        title: new Text('Join Room'),
       ),
       body: new OrientationBuilder(
         builder: (context, orientation) {
@@ -208,11 +249,12 @@ class _MyAppState extends State<LoopBackSample> {
           );
         },
       ),
-      floatingActionButton: new FloatingActionButton(
-        onPressed: _inCalling ? _hangUp : _makeCall,
+      floatingActionButton: ready? FloatingActionButton(
+        onPressed:_inCalling ? _hangUp : _makeCall ,
         tooltip: _inCalling ? 'Hangup' : 'Call',
         child: new Icon(_inCalling ? Icons.call_end : Icons.phone),
-      ),
+      ):SizedBox(),
     );
   }
 }
+

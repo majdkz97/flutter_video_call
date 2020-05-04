@@ -1,20 +1,12 @@
 import 'dart:core';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'
-    show debugDefaultTargetPlatformOverride;
-import 'package:flutter_webrtc/webrtc.dart';
-
-import 'src/loopback_sample.dart';
-import 'src/get_user_media_sample.dart'
-    if (dart.library.js) 'src/get_user_media_sample_web.dart';
-import 'src/get_display_media_sample.dart';
-import 'src/data_channel_sample.dart';
-import 'src/route_item.dart';
+import 'package:maidsvideocall/src/join_room.dart';
+import 'src/create_room.dart';
 
 void main() {
-  if (WebRTC.platformIsDesktop)
-    debugDefaultTargetPlatformOverride = TargetPlatform.fuchsia;
+
   runApp(new MyApp());
+
 }
 
 class MyApp extends StatefulWidget {
@@ -23,79 +15,89 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  List<RouteItem> items;
 
   @override
   initState() {
     super.initState();
-    _initItems();
-  }
-
-  _buildRow(context, item) {
-    return ListBody(children: <Widget>[
-      ListTile(
-        title: Text(item.title),
-        onTap: () => item.push(context),
-        trailing: Icon(Icons.arrow_right),
-      ),
-      Divider()
-    ]);
-  }
+   }
 
   @override
   Widget build(BuildContext context) {
     return new MaterialApp(
       home: new Scaffold(
           appBar: new AppBar(
-            title: new Text('Flutter-WebRTC example'),
+            title: new Text('Maids.cc-Video Call example'),
           ),
           body: new ListView.builder(
               shrinkWrap: true,
-              padding: const EdgeInsets.all(0.0),
-              itemCount: items.length,
+              padding: const EdgeInsets.all(12.0),
+              itemCount:2,
               itemBuilder: (context, i) {
-                return _buildRow(context, items[i]);
+                return RaisedButton(onPressed: (){
+                  if(i==0)
+                    {
+                      Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (context){
+                                return CreateRoom();}
+                          )
+                      );
+                    }
+                  else
+                    {
+                       _showAddressDialog(context);
+                    }
+
+                },
+                child: Text(i==0?'Create Room':'Join Room'),
+                );
               })),
     );
   }
 
-  _initItems() {
-    items = <RouteItem>[
-      RouteItem(
-          title: 'GetUserMedia',
-          push: (BuildContext context) {
-            Navigator.push(
-                context,
-                new MaterialPageRoute(
-                    builder: (BuildContext context) =>
-                        new GetUserMediaSample()));
-          }),
-      RouteItem(
-          title: 'GetDisplayMedia',
-          push: (BuildContext context) {
-            Navigator.push(
-                context,
-                new MaterialPageRoute(
-                    builder: (BuildContext context) =>
-                        new GetDisplayMediaSample()));
-          }),
-      RouteItem(
-          title: 'LoopBack Sample',
-          push: (BuildContext context) {
-            Navigator.push(
-                context,
-                new MaterialPageRoute(
-                    builder: (BuildContext context) => new LoopBackSample()));
-          }),
-      RouteItem(
-          title: 'DataChannel',
-          push: (BuildContext context) {
-            Navigator.push(
-                context,
-                new MaterialPageRoute(
-                    builder: (BuildContext context) =>
-                        new DataChannelSample()));
-          }),
-    ];
-  }
+}
+
+
+
+void showDemoDialog<T>({BuildContext context, Widget child}) {
+  showDialog<T>(
+    context: context,
+    builder: (BuildContext context) => child,
+  ).then<void>((T value) {
+    // The value passed to Navigator.pop() or null.
+    if (value != null) {
+
+    }
+  });
+}
+
+_showAddressDialog(context) {
+  TextEditingController textEditingController = TextEditingController();
+  showDemoDialog<String>(
+      context: context,
+      child: new AlertDialog(
+          title: const Text('Enter Room Id:'),
+          content: TextField(
+            controller: textEditingController,
+            onChanged: (String text) {
+
+            },
+            decoration: InputDecoration(
+            ),
+            textAlign: TextAlign.center,
+          ),
+          actions: <Widget>[
+            new FlatButton(
+                child: const Text('CANCEL'),
+                onPressed: () {
+                  Navigator.pop(context);
+                }),
+            new FlatButton(
+                child: const Text('CONNECT'),
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(builder: (context){
+                    return JoinRoom(id:textEditingController.text ,);
+                  }));
+                })
+          ]));
 }
